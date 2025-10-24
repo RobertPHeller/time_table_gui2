@@ -13,6 +13,6 @@ description = "Model Railroad Time Table generating program"
 
 [dependencies]
 time_table = "0.1.3"
-iced = "0.13.1"
+iced = { version = "0.13.1", features = ["lazy"] }
 
 
