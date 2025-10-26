@@ -8,7 +8,7 @@
 //  Author        : $Author$
 //  Created By    : Robert Heller
 //  Created       : 2025-10-24 10:24:21
-//  Last Modified : <251025.1714>
+//  Last Modified : <251025.2225>
 //
 //  Description	
 //
@@ -45,16 +45,22 @@
 mod menubar;
 use crate::menubar::*;
 use time_table::*;
+use time_table::cab::*;
+use time_table::station::*;
+use time_table::train::*;
 use iced::widget::{pane_grid, pick_list, button, column, row, text, Column,
                    scrollable, responsive, container, image, canvas}; 
 use iced::widget::pane_grid::{Axis,PaneGrid};
 use iced::{Background,Theme,Center, Color, Element, Fill, Size, Subscription,
             Renderer, Rectangle, mouse, Point};
 use iced::widget::button::Style;
-use iced::widget::canvas::{Text,Path};
+use iced::widget::canvas::{Text,Path,Stroke};
+use iced::alignment::Vertical;
 use iced::keyboard;
 use std::process::exit;
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, DefaultHasher};
+use std::sync::{LazyLock, Mutex};
 
 #[derive(Debug, Clone, Copy)]
 enum Message {
@@ -121,11 +127,38 @@ pub struct ChartDisplay {
     labelsize: u32,
 }
 
+static COLOR_MAP: Mutex<HashMap<&'static str, (u8,u8,u8), BuildHasherDefault<DefaultHasher>>> =
+    Mutex::new(HashMap::with_hasher(BuildHasherDefault::new()));
+fn InitColorMap() {
+    COLOR_MAP.lock().unwrap().insert("black",(0,0,0));
+    COLOR_MAP.lock().unwrap().insert("white",(255,255,255));
+    COLOR_MAP.lock().unwrap().insert("grey",( 190, 190, 190));
+    COLOR_MAP.lock().unwrap().insert("blue",(   0,   0, 255));
+    COLOR_MAP.lock().unwrap().insert("cyan",(   0, 255, 255));
+    COLOR_MAP.lock().unwrap().insert("green",(  0, 255,   0));
+    COLOR_MAP.lock().unwrap().insert("yellow",( 255, 255,  0));
+    COLOR_MAP.lock().unwrap().insert("violet",( 238, 130, 238));
+    COLOR_MAP.lock().unwrap().insert("magenta",( 255,   0, 255));
+    COLOR_MAP.lock().unwrap().insert("purple",( 160,  32, 240));
+    COLOR_MAP.lock().unwrap().insert("red",(  255,   0,   0));
+}
+
+fn LookupColorByName(name: &str) -> Color {
+    let (r,g,b) = match COLOR_MAP.lock().unwrap().get(name) {
+        None => (0,0,0),
+        Some(rgb) => *rgb,
+    };
+    Color::from_rgba8(r,g,b,1.0)
+}
+
+
+
 impl ChartDisplay {
     fn new (timescale: u32, timeinterval: u32, labelsize: u32) -> Self
     {
         let lab = canvas::Text::default();
         let lh = lab.size.0 as f64 * 1.5;
+        //eprintln!("*** ChartDisplay::new(): lh is {}",lh);
         Self {lheight: lh, topofcabs: 0.0, cabheight: 0.0,
                              bottomofcabs: 0.0, numberofcabs: 0, 
                              cabarray: HashMap::new(), topofchart: 0.0, 
@@ -210,7 +243,59 @@ impl ChartDisplay {
         eprintln!("*** ChartDisplay::ComputeTotalSize returns: ({},{})",framewidth,frameheight);
         (framewidth, frameheight)
     }
-    
+    pub fn addACab(&mut self,frame: &mut canvas::Frame,cab: &Cab,
+                    cabindex: usize) 
+    {
+        let cabyoff = (self.lheight*0.5) + (cabindex as f64 * self.lheight);
+        self.numberofcabs += 1;
+        let cabName = cab.Name();
+        let cabColor = cab.Color();
+        let cy = cabyoff+self.topofcabs;
+        self.cabarray.insert(CabArrayIndex::Y(cabName.clone()),cy);
+        let r = self.labelsize as f64 + ((self.timescale as f64 / self.timeinterval as f64) * 20.0);
+        let line = canvas::Path::line(
+                Point::new(self.labelsize as f32,cy as f32),
+                Point::new(r as f32,cy as f32));
+        let stroke = Stroke::default()
+                    .with_color(LookupColorByName(cabColor.as_str()))
+                    .with_width(4.0);
+        frame.stroke(&line,stroke); 
+        let mut label = Text::from(cabName);
+        label.position = Point::new(0.0,cy as f32);
+        label.vertical_alignment = Vertical::Center;
+        label.color = LookupColorByName(cabColor.as_str());
+        label.draw_with(|path,color|frame.fill(&path,color));
+    }
+    fn _buildcabs(&mut self,frame: &mut canvas::Frame)
+    {
+        for m in (0..=self.timescale).step_by(self.timeinterval as usize) {
+            let mx = (self.labelsize as f64) + ( ( ((m as f64) / (self.timeinterval as f64)) * 20.0)) + 4.0;
+            let lw = if (m % 60) == 0 {2} else {1};
+            let line = canvas::Path::line(
+                               Point::new(mx as f32,self.topofcabs as f32),
+                               Point::new(mx as f32,self.bottomofcabs as f32));
+            let stroke = Stroke::default()
+                            .with_color(Color::BLACK)
+                            .with_width(lw as f32);
+            frame.stroke(&line,stroke);
+        }
+        let r = self.labelsize as f64 + (((self.timescale as f64 / 
+                                            self.timeinterval as f64) * 20.0));
+        let line = canvas::Path::line(
+                                Point::new(self.labelsize as f32,
+                                           self.topofcabs as f32),
+                                Point::new(r as f32,
+                                           self.topofcabs as f32));
+        let stroke = Stroke::default().with_color(Color::BLACK) 
+                                      .with_width(2.0);
+        frame.stroke(&line,stroke);
+        let line = canvas::Path::line(
+                                Point::new(self.labelsize as f32,
+                                           self.bottomofcabs as f32),
+                                Point::new(r as f32,
+                                           self.bottomofcabs as f32));
+        frame.stroke(&line,stroke);
+    }
     fn buildWholeChart(&mut self, renderer: &Renderer, 
                         timetable: &TimeTableSystem) -> Vec<canvas::Geometry> {
         self.deleteWholeChart();
@@ -224,9 +309,11 @@ impl ChartDisplay {
         let framewidth = cwidth as f32;
         let topOff = self.lheight;
         self.topofcabs = (topOff + 10.0) as f64;
-        self.cabheight = (self.lheight + 20.0)
-                            +timetable.NumberOfCabs() as f64 * self.lheight;
-        let topOff = self.chartheight + self.cabheight;
+        self.cabheight = 4.0 +timetable.NumberOfCabs() as f64 * self.lheight;
+        self.bottomofcabs = self.topofcabs + self.cabheight;        
+        self.topofchart = self.bottomofcabs + 10.0;
+        self.bottomofchart = self.topofchart + self.chartheight;
+        let topOff = self.topofchart + self.cabheight;
         self.topofstorage = topOff as f64 + 10.0;
         self.storageoffset = self.topofstorage;
         let topOff = self.topofstorage;
@@ -242,17 +329,19 @@ impl ChartDisplay {
         let cheight = self.bottomofstorage;
         let frameheight = cheight as f32;
 
-        eprintln!("*** ChartDisplay::buildWholeChart frame size is ({},{})",framewidth,frameheight);
+        //eprintln!("*** ChartDisplay::buildWholeChart frame size is ({},{})",framewidth,frameheight);
         let mut frame = canvas::Frame::new(renderer, Size::new(framewidth, frameheight));
 
         self._buildTimeLine(&mut frame);
-        //self._buildCabs(&mut frame);
+        self._buildcabs(&mut frame);
+        let mut cabindex = 0;
+        for (name, cab) in timetable.CabsIter() {
+            self.addACab(&mut frame,cab,cabindex);
+            cabindex += 1;
+        }
         //self._buildChart(&mut frame);
         //self._buildStorageTracks(&mut frame);
 
-        for (name, cab) in timetable.CabsIter() {
-            //self.addACab(&mut frame,cab);
-        }
         let mut sindex = 0;
         for station in timetable.StationsIter() {
             //self.addAStation(&mut frame,station,sindex);
@@ -538,7 +627,10 @@ impl TimeTableGUI {
                                 canvas(self)
                                     .width(framewidth)
                                     .height(frameheight)
-                            )
+                            ).direction(scrollable::Direction::Both {
+                                    horizontal: scrollable::Scrollbar::new(),
+                                     vertical: scrollable::Scrollbar::new(),
+                                })
                         )},
                     Pane::Buttons => 
                         pane_grid::Content::new(Self::buttonbox()),
@@ -574,6 +666,7 @@ enum Pane {
 
 
 pub fn main() -> iced::Result {
+    InitColorMap();
     iced::application("Time Table 2", TimeTableGUI::update, TimeTableGUI::view)
         .theme(|_| Theme::Light)
         .centered()
