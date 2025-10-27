@@ -8,7 +8,7 @@
 //  Author        : $Author$
 //  Created By    : Robert Heller
 //  Created       : 2025-10-24 10:24:21
-//  Last Modified : <251025.2225>
+//  Last Modified : <251026.2013>
 //
 //  Description	
 //
@@ -54,7 +54,8 @@ use iced::widget::pane_grid::{Axis,PaneGrid};
 use iced::{Background,Theme,Center, Color, Element, Fill, Size, Subscription,
             Renderer, Rectangle, mouse, Point};
 use iced::widget::button::Style;
-use iced::widget::canvas::{Text,Path,Stroke};
+use iced::widget::canvas::{Text,Path,Stroke,Event};
+use iced::widget::canvas::path::lyon_path;
 use iced::alignment::Vertical;
 use iced::keyboard;
 use std::process::exit;
@@ -186,7 +187,6 @@ impl ChartDisplay {
             let mut label = Text::from(hourlab);
             label.position = Point::new(mx as f32,0.0);
             label.draw_with(|path,color|frame.fill(&path,color));
-            //self.hull.create_text( mx, 0.0, -anchor("n") -text(format!("{:2}", m / 60)) -tags("TimeLine"))?;
          }
     }
     pub fn deleteWholeChart(&mut self) {
@@ -215,7 +215,7 @@ impl ChartDisplay {
         let timescale = timetable.TimeScale();
         let timeinterval = timetable.TimeInterval();
         let totallength = timetable.TotalLength();
-        let chartheight = (totallength * 20.0) + 20.0;
+        let chartheight = (totallength * 20.0) + 40.0;
         let numIncrs =  (((timescale as f64) + (timeinterval as f64)) / 
                             (timeinterval as f64)) as i32;
         let cwidth = (numIncrs * 20) + 100 + 20;
@@ -236,9 +236,9 @@ impl ChartDisplay {
                 numstorage += 1;
             }
         }
-        let storagetrackheight = (lheight + 20.0) + (numstorage as f64 * lheight);
+        let storagetrackheight = (lheight) + (numstorage as f64 * lheight);
         let bottomofstorage = topofstorage + storagetrackheight;
-        let cheight = bottomofstorage;
+        let cheight = bottomofstorage + lheight;
         let frameheight = cheight as f32;
         eprintln!("*** ChartDisplay::ComputeTotalSize returns: ({},{})",framewidth,frameheight);
         (framewidth, frameheight)
@@ -265,6 +265,690 @@ impl ChartDisplay {
         label.vertical_alignment = Vertical::Center;
         label.color = LookupColorByName(cabColor.as_str());
         label.draw_with(|path,color|frame.fill(&path,color));
+    }
+    fn _labelWidthCheck(name: &str,width: f32) -> bool
+    {
+        let mut result: bool = true; 
+        let text = Text::from(name);
+        text.draw_with(|path,_| {
+            for e in path.raw().iter() {
+                match e {
+                    lyon_path::Event::Begin { at } => {
+                        if at.x > width {result = false; break;}
+                    },
+                    lyon_path::Event::Line { from, to } => {
+                        if from.x > width ||
+                           to.x > width {result = false; break;} 
+                    },
+                    lyon_path::Event::Quadratic { from, ctrl, to } => {
+                        if from.x > width ||
+                           to.x > width {result = false; break;} 
+                    },
+                    lyon_path::Event::Cubic {from, ctrl1, ctrl2, to, } => {
+                        if from.x > width ||
+                           to.x > width {result = false; break;} 
+                    },
+                    lyon_path::Event::End { last, first, close } => {
+                        if last.x > width ||
+                           first.x > width {result = false; break;} 
+                    },   
+                }
+            }
+        });
+        result
+    }
+    fn _MakeLabelBox(label: &Text) -> Path
+    {
+        let mut topLeft = Point::new(99999999.9,99999999.9);
+        let mut size    = Size::new(0.0,0.0);
+        label.draw_with(|path,_| {
+            for e in path.raw().iter() {
+                match e {
+                    lyon_path::Event::Begin { at } => {
+                        if at.x < topLeft.x {topLeft.x = at.x;}
+                        if at.y < topLeft.y {topLeft.y = at.y;}
+                    },
+                    lyon_path::Event::Line { from, to } => {
+                        if from.x < topLeft.x {topLeft.x = from.x;}
+                        if from.y < topLeft.y {topLeft.y = from.y;}
+                        if to.x < topLeft.x {topLeft.x = to.x;}
+                        if to.y < topLeft.y {topLeft.y = to.y;}
+                    },
+                    lyon_path::Event::Quadratic { from, ctrl, to } => {
+                        if from.x < topLeft.x {topLeft.x = from.x;}
+                        if from.y < topLeft.y {topLeft.y = from.y;}
+                        if to.x < topLeft.x {topLeft.x = to.x;}
+                        if to.y < topLeft.y {topLeft.y = to.y;}
+                    },
+                    lyon_path::Event::Cubic {from, ctrl1, ctrl2, to, } => {
+                        if from.x < topLeft.x {topLeft.x = from.x;}
+                        if from.y < topLeft.y {topLeft.y = from.y;}
+                        if to.x < topLeft.x {topLeft.x = to.x;}
+                        if to.y < topLeft.y {topLeft.y = to.y;}
+                    },
+                    lyon_path::Event::End { last, first, close } => {
+                        if last.x < topLeft.x {topLeft.x = last.x;}
+                        if last.y < topLeft.y {topLeft.y = last.y;}
+                        if first.x < topLeft.x {topLeft.x = first.x;}
+                        if first.y < topLeft.y {topLeft.y = first.y;}
+                    },
+                }
+            }
+            for e in path.raw().iter() {
+                match e {
+                    lyon_path::Event::Begin { at } => {
+                        let sx = at.x - topLeft.x;
+                        if sx > size.width {size.width = sx;}
+                        let sy = at.y - topLeft.y;
+                        if sy > size.height {size.height = sy;}
+                    },
+                    lyon_path::Event::Line { from, to } => {
+                        let sx = from.x - topLeft.x;
+                        if sx > size.width {size.width = sx;}
+                        let sy = from.y - topLeft.y;
+                        if sy > size.height {size.height = sy;}
+                        let sx = to.x - topLeft.x;
+                        if sx > size.width {size.width = sx;}
+                        let sy = to.y - topLeft.y;
+                        if sy > size.height {size.height = sy;}
+                    },
+                    lyon_path::Event::Quadratic { from, ctrl, to } => {
+                        let sx = from.x - topLeft.x;
+                        if sx > size.width {size.width = sx;}
+                        let sy = from.y - topLeft.y;
+                        if sy > size.height {size.height = sy;}
+                        let sx = to.x - topLeft.x;
+                        if sx > size.width {size.width = sx;}
+                        let sy = to.y - topLeft.y;
+                        if sy > size.height {size.height = sy;}
+                    },
+                    lyon_path::Event::Cubic {from, ctrl1, ctrl2, to, } => {
+                        let sx = from.x - topLeft.x;
+                        if sx > size.width {size.width = sx;}
+                        let sy = from.y - topLeft.y;
+                        if sy > size.height {size.height = sy;}
+                        let sx = to.x - topLeft.x;
+                        if sx > size.width {size.width = sx;}
+                        let sy = to.y - topLeft.y;
+                        if sy > size.height {size.height = sy;}
+                    },
+                    lyon_path::Event::End { last, first, close } => {
+                        let sx = last.x - topLeft.x;
+                        if sx > size.width {size.width = sx;}
+                        let sy = last.y - topLeft.y;
+                        if sy > size.height {size.height = sy;}
+                        let sx = first.x - topLeft.x;
+                        if sx > size.width {size.width = sx;}
+                        let sy = first.y - topLeft.y;
+                        if sy > size.height {size.height = sy;}
+                    },
+                }
+            }
+        });
+        Path::rectangle(topLeft,size)
+    }
+    pub fn addAStation(&mut self,frame: &mut canvas::Frame,station: &Station,sindex: usize)
+    {
+        let mut name: &str = &station.Name();
+        let smile = station.SMile(); 
+        if smile > self.totallength {self.totallength = smile;} 
+        let offset = self.topofchart + 20.0;
+        let y = offset+(smile * 20.0);
+        self.stationarray.insert(StationArrayIndex::Y(sindex),y);
+        self.stationarray.insert(StationArrayIndex::Smile(sindex),smile);
+        let lsize = self.labelsize as f32;
+        loop {
+            if Self::_labelWidthCheck(name,lsize) {break;}
+            name = &name[0..name.len()-1];
+        }
+        let mut labelText = Text::from(name);
+        labelText.position = Point::new(0.0,y as f32);
+        labelText.vertical_alignment = Vertical::Center;
+        let labelBox = Self::_MakeLabelBox(&labelText);
+        labelText.draw_with(|path,color|frame.fill(&path,color));
+        let stroke = Stroke::default().with_color(Color::BLACK).with_width(1.0);
+        frame.stroke(&labelBox,stroke);
+        let r = self.labelsize as f64 +
+                    (((self.timescale as f64 / self.timeinterval as f64) * 20.0));
+        let line = canvas::Path::line(
+                Point::new(self.labelsize as f32,y as f32),
+                Point::new(r as f32,y as f32));
+        let stroke = Stroke::default() 
+                .with_color(Color::BLACK)
+                .with_width(2.0);
+        frame.stroke(&line,stroke);
+        for storage in station.storagetracks() {
+            self.addAStorageTrack(frame,station,storage);
+        }
+    }
+    pub fn addAStorageTrack(&mut self,frame: &mut canvas::Frame,
+                    station: &Station, track: &StorageTrack)
+    {
+        let storageyoff = (self.lheight*0.5) + (self.numberofstoragetracks as f64 * self.lheight);
+        self.numberofstoragetracks += 1;
+        let stationName = station.Name();
+        let trackName   = track.Name();
+        let nameOnChart = Self::_formNameOnChart(self.labelsize as f32,
+                                                 stationName.as_str(), 
+                                                 trackName.as_str());
+        let y = storageyoff + self.topofstorage;
+        self.storagearray.insert(StorageArrayIndex::Y(stationName.clone(),
+                                                      trackName.clone()),y);
+        let mut label = Text::from(nameOnChart);
+        label.position = Point::new(0.0,y as f32);
+        label.vertical_alignment = Vertical::Center;
+        label.draw_with(|path,color|frame.fill(&path,color));
+        let stroke = Stroke::default().with_color(Color::BLACK).with_width(4.0);
+        let r = self.labelsize as f64 + (((self.timescale as f64 / self.timeinterval as f64) * 20.0));
+        let line = canvas::Path::line(
+            Point::new(self.labelsize as f32,y as f32),
+            Point::new(r as f32,y as f32));
+        frame.stroke(&line,stroke);
+    }
+    fn _formNameOnChart(lsize: f32,sn_: &str,tn_: &str) -> String
+    {
+        let mut sn = &sn_[0..];
+        let mut tn = &tn_[0..];
+        loop {
+            let l1 = format!("{}:{}",sn,tn);
+            let l2 = format!("{}:",sn);
+            if Self::_labelWidthCheck(l1.as_str(),lsize) ||
+               Self::_labelWidthCheck(l2.as_str(),lsize / 2.0) {break;}
+            sn = &sn[0..sn.len()-1]; 
+        }
+        loop {
+            let l1 = format!("{}:{}",sn,tn);
+            if Self::_labelWidthCheck(l1.as_str(),lsize as f32) {
+                break;
+            }
+            tn = &tn[0..tn.len()-1];
+        }
+        format!("{}:{}",sn,tn)
+    }
+
+    pub fn addATrain(&mut self,frame: &mut canvas::Frame,timetable: &TimeTableSystem,train:&Train)
+    {
+        let lastX = self.labelsize as f64 + ((self.timescale as f64 / self.timeinterval as f64) * 20.0) + 4.0;
+        let firstX = self.labelsize as f64 + 4.0;
+
+        let mut timeX = -1.0;
+        let mut stationY = -1.0;
+        let mut rStationY = -1.0;
+        // The next two variables are not referenced the first time
+        // through the loop (because timeX is initialized to -1),
+        // but the dumb compiler is afraid they might be referenced
+        // when uninitialized.
+        let mut color: String = String::from("black");
+        let mut cabName: String = String::new();
+        let departure = train.Departure();
+        let mut oldDepart = -1.0;
+        let mut oldSmile = -1.0;
+        let speed = train.Speed();
+        for stop in train.StopIter() {
+            let sindex = stop.StationIndex();
+            let station = timetable.IthStation(sindex).unwrap();
+            let smile = station.SMile();
+            let rSindex = station.DuplicateStationIndex();
+            let (rStation,rsmile,newRStationY) =
+                match rSindex {
+                    None => (None,-1.0,-1.0),
+                    Some(rsind) => {
+                        let rStation = timetable.IthStation(rsind).unwrap();
+                        let rsmile = rStation.SMile();
+                        let newRStationY = self.stationarray.get(&StationArrayIndex::Y(rsind)).unwrap();
+                        (Some(rStation),rsmile,*newRStationY)
+                    },
+            };
+            let departcab = stop.TheCab();
+            let newcolor: String;
+            let newname: String;
+            //let newColor: &str;
+            //let newCabName: &str;
+            match departcab {
+                None => {
+                    newcolor = String::from("black");
+                    newname = String::new();
+                },                    
+                Some(cab) => {
+                    newcolor = cab.Color();
+                    newname =  cab.Name();
+                },
+            };
+            let newStationY = self.stationarray.get(&StationArrayIndex::Y(sindex)).unwrap();
+            let arrival: f64 = if oldDepart >= 0.0 {
+                oldDepart + (smile - oldSmile).abs() * (speed as f64 / 60.0)
+            } else {
+                departure as f64
+            };
+            let storage: Option<&StorageTrack>;
+            let rstorage: Option<&StorageTrack>;
+            match stop.Flag() {
+                StopFlagType::Origin => {
+                    let depart = departure as f64;
+                    storage = station.FindTrackTrainIsStoredOn(train.Number(),depart,depart);
+                    if rStation.is_some() {
+                        rstorage = rStation.unwrap().FindTrackTrainIsStoredOn(train.Number(),depart,depart);
+                    } else {
+                        rstorage = None;
+                    }
+                },
+                StopFlagType::Terminate => {
+                    storage = station.FindTrackTrainIsStoredOn(train.Number(),arrival,arrival);
+                    if rStation.is_some() {
+                        rstorage = rStation.unwrap().FindTrackTrainIsStoredOn(train.Number(),arrival,arrival);
+                    } else {
+                        rstorage = None;
+                    }
+                },
+                StopFlagType::Transit => {
+                    storage = None;
+                    rstorage = None;
+                },
+            };
+            if storage.is_some() {
+                let stationName = station.Name();
+                let trackName   = storage.unwrap().Name();
+                let sy = *self.storagearray.get(&StorageArrayIndex::Y(stationName,trackName)).unwrap();
+                let occupiedA = storage.unwrap().IncludesTime(arrival);
+                let occupiedD = storage.unwrap().IncludesTime(departure as f64);
+                if occupiedA.is_some() &&
+                   occupiedA.unwrap().TrainNum() == train.Number() {
+                    let from = occupiedA.unwrap().From();
+                    let to   = occupiedA.unwrap().Until();
+                    let fromX = self.labelsize as f64 +
+                                    ((from / self.timeinterval as f64) * 20.0) + 4.0;
+                    let toX   = self.labelsize as f64 +
+                                    ((to / self.timeinterval as f64) * 20.0) + 4.0;
+                    let stroke = Stroke::default()
+                        .with_color(LookupColorByName(newcolor.as_str()))
+                        .with_width(8.0);
+                    if toX > fromX {
+                        let line = canvas::Path::line(
+                            Point::new(fromX as f32,sy as f32),
+                            Point::new(toX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                    } else {
+                        let line = canvas::Path::line(
+                            Point::new(fromX as f32,sy as f32),
+                            Point::new(lastX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                        let line = canvas::Path::line(
+                            Point::new(firstX as f32,sy as f32),
+                            Point::new(toX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                    }
+                }
+                if occupiedD.is_some() &&
+                   occupiedD.unwrap().TrainNum2() == train.Number() {
+                    let from = occupiedD.unwrap().From();
+                    let to   = occupiedD.unwrap().Until();
+                    let fromX = self.labelsize as f64 +
+                                    ((from / self.timeinterval as f64) * 20.0) + 4.0;
+                    let toX   = self.labelsize as f64 +
+                                    ((to / self.timeinterval as f64) * 20.0) + 4.0;
+                    let stroke = Stroke::default()
+                        .with_color(LookupColorByName(newcolor.as_str()))
+                        .with_width(8.0);
+                    if toX > fromX {
+                        let line = canvas::Path::line(
+                            Point::new(fromX as f32,sy as f32),
+                            Point::new(toX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                    } else {
+                        let line = canvas::Path::line(
+                            Point::new(fromX as f32,sy as f32),
+                            Point::new(lastX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                        let line = canvas::Path::line(
+                            Point::new(firstX as f32,sy as f32),
+                            Point::new(toX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                    }
+                }
+            }
+            if rstorage.is_some() {
+                let stationName = rStation.unwrap().Name();
+                let trackName   = rstorage.unwrap().Name();
+                let sy = *self.storagearray.get(&StorageArrayIndex::Y(stationName,trackName)).unwrap();
+                let occupiedA = rstorage.unwrap().IncludesTime(arrival);
+                let occupiedD = rstorage.unwrap().IncludesTime(departure as f64);
+                if occupiedA.is_some() &&
+                   occupiedA.unwrap().TrainNum() == train.Number() {
+                    let from = occupiedA.unwrap().From();
+                    let to   = occupiedA.unwrap().Until();
+                    let fromX = self.labelsize as f64 +
+                                    ((from / self.timeinterval as f64) * 20.0) + 4.0;
+                    let toX   = self.labelsize as f64 +
+                                    ((to / self.timeinterval as f64) * 20.0) + 4.0;
+                    let stroke = Stroke::default()
+                        .with_color(LookupColorByName(newcolor.as_str()))
+                        .with_width(8.0);
+                    if toX > fromX {
+                        let line = canvas::Path::line(
+                            Point::new(fromX as f32,sy as f32),
+                            Point::new(toX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                    } else {
+                        let line = canvas::Path::line(
+                            Point::new(fromX as f32,sy as f32),
+                            Point::new(lastX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                        let line = canvas::Path::line(
+                            Point::new(firstX as f32,sy as f32),
+                            Point::new(toX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                    }
+                }
+                if occupiedD.is_some() &&
+                   occupiedD.unwrap().TrainNum2() == train.Number() {
+                    let from = occupiedD.unwrap().From();
+                    let to   = occupiedD.unwrap().Until();
+                    let fromX = self.labelsize as f64 +
+                                    ((from / self.timeinterval as f64) * 20.0) + 4.0;
+                    let toX   = self.labelsize as f64 +
+                                    ((to / self.timeinterval as f64) * 20.0) + 4.0;
+                    let stroke = Stroke::default()
+                        .with_color(LookupColorByName(newcolor.as_str()))
+                        .with_width(8.0);
+                    if toX > fromX {
+                        let line = canvas::Path::line(
+                            Point::new(fromX as f32,sy as f32),
+                            Point::new(toX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                    } else {
+                        let line = canvas::Path::line(
+                            Point::new(fromX as f32,sy as f32),
+                            Point::new(lastX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                        let line = canvas::Path::line(
+                            Point::new(firstX as f32,sy as f32),
+                            Point::new(toX as f32,sy as f32));
+                        frame.stroke(&line,stroke);
+                    }
+                }
+            }
+            let mut newTimeX = self.labelsize as f64 + ((arrival / self.timeinterval as f64) * 20.0) + 4.0;
+            if timeX >= 0.0 {
+                if newTimeX > timeX {
+                    let stroke = Stroke::default()
+                        .with_color(LookupColorByName(color.as_str()))
+                        .with_width(4.0);
+                    let line = canvas::Path::line(
+                            Point::new(timeX as f32,stationY as f32),
+                            Point::new(newTimeX as f32,*newStationY as f32));
+                    frame.stroke(&line,stroke);
+                    if rStationY >= 0.0 && newRStationY >= 0.0 {
+                        let line = canvas::Path::line(
+                            Point::new(timeX as f32,rStationY as f32),
+                            Point::new(newTimeX as f32,newRStationY as f32));
+                        frame.stroke(&line,stroke);
+                    }
+                    match self.cabarray.get(&CabArrayIndex::Y(cabName.clone())) {
+                        None => (),
+                        Some(cy) => {
+                            let stroke = Stroke::default() 
+                                .with_color(LookupColorByName(color.as_str()))
+                                .with_width(8.0);
+                            let line = canvas::Path::line(
+                                Point::new(timeX as f32,*cy as f32),
+                                Point::new(newTimeX as f32,*cy as f32));
+                            frame.stroke(&line,stroke);
+                        },
+                    }
+                } else {
+                    let unwrapNX = newTimeX - lastX;
+                    let slope = (newStationY - stationY) as f64 / (unwrapNX - timeX) as f64;
+                    let midY = stationY + (slope * (lastX - timeX));
+                    let stroke = Stroke::default()
+                        .with_color(LookupColorByName(color.as_str()))
+                        .with_width(4.0);
+                    let line = canvas::Path::line(
+                        Point::new(timeX as f32,stationY as f32),
+                        Point::new(lastX as f32,midY as f32));
+                    frame.stroke(&line,stroke);
+                    let line = canvas::Path::line(
+                        Point::new(firstX as f32,midY as f32),
+                        Point::new(newTimeX as f32,*newStationY as f32));
+                    frame.stroke(&line,stroke);
+                    if rStationY >= 0.0 && newRStationY >= 0.0 {
+                        let slope = (newRStationY - rStationY) as f64 / 
+                                    (unwrapNX - timeX) as f64;
+                        let midY = rStationY + (slope * (lastX - timeX));
+                        let line = canvas::Path::line(
+                                Point::new(timeX as f32,rStationY as f32),
+                                Point::new(lastX as f32,midY as f32));
+                        frame.stroke(&line,stroke); 
+                        let line = canvas::Path::line(
+                                Point::new(firstX as f32,midY as f32),
+                                Point::new(newTimeX as f32,newRStationY as f32));
+                        frame.stroke(&line,stroke); 
+                    }
+                    match self.cabarray.get(&CabArrayIndex::Y(cabName.clone())) {
+                        None => (),
+                        Some(cy) => {
+                            let stroke = Stroke::default()
+                                .with_color(LookupColorByName(color.as_str()))
+                                .with_width(8.0);
+                            let line = canvas::Path::line(
+                                Point::new(timeX as f32,*cy as f32),
+                                Point::new(newTimeX as f32,*cy as f32));
+                            frame.stroke(&line,stroke);
+                        },
+                    }
+                }
+            }
+            timeX = newTimeX;
+            cabName = newname;
+            color = newcolor;
+            stationY = *newStationY;
+            rStationY = newRStationY;
+            let depart = stop.Departure(arrival);
+            if depart > arrival {
+                let (cy, dontdrawcab): (f64, bool) = 
+                    match self.cabarray.get(&CabArrayIndex::Y(cabName.clone())) {
+                        None => (0.0, true),
+                        Some(cy) => (*cy, false),
+                };
+                newTimeX = self.labelsize as f64 + ((depart / self.timeinterval as f64) * 20.0) + 4.0;
+                if newTimeX > timeX {
+                    let stroke = Stroke::default()
+                        .with_color(LookupColorByName(color.as_str()))
+                        .with_width(4.0);
+                    let line = canvas::Path::line(
+                        Point::new(timeX as f32,stationY as f32),
+                        Point::new(newTimeX as f32,stationY as f32));
+                    frame.stroke(&line,stroke);
+                    if rStationY >= 0.0 {
+                        let line = canvas::Path::line(
+                            Point::new(timeX as f32,rStationY as f32),
+                            Point::new(newTimeX as f32,rStationY as f32));
+                        frame.stroke(&line,stroke);
+                    }
+                    if !dontdrawcab {
+                        let stroke = Stroke::default()
+                            .with_color(LookupColorByName(color.as_str()))
+                            .with_width(8.0);
+                        let line = canvas::Path::line(
+                            Point::new(timeX as f32,cy as f32),
+                            Point::new(newTimeX as f32,cy as f32));
+                        frame.stroke(&line,stroke);
+                    }
+                } else {
+                    let stroke = Stroke::default()
+                        .with_color(LookupColorByName(color.as_str()))
+                        .with_width(4.0);
+                    let line = canvas::Path::line(
+                        Point::new(timeX as f32,stationY as f32),
+                        Point::new(lastX as f32,stationY as f32));
+                    frame.stroke(&line,stroke);
+                    let line = canvas::Path::line(
+                        Point::new(firstX as f32,stationY as f32),
+                        Point::new(newTimeX as f32,stationY as f32));
+                    frame.stroke(&line,stroke);                    
+                    if rStationY >= 0.0 {
+                        let line = canvas::Path::line(
+                            Point::new(timeX as f32,rStationY as f32),
+                            Point::new(lastX as f32,rStationY as f32));
+                        frame.stroke(&line,stroke);
+                        let line = canvas::Path::line(
+                            Point::new(firstX as f32,rStationY as f32),
+                            Point::new(newTimeX as f32,rStationY as f32));
+                        frame.stroke(&line,stroke);
+                    }
+                    if !dontdrawcab {
+                        let stroke = Stroke::default()
+                            .with_color(LookupColorByName(color.as_str()))
+                            .with_width(8.0);
+                        let line = canvas::Path::line(
+                            Point::new(timeX as f32,cy as f32),
+                            Point::new(lastX as f32,cy as f32));
+                        frame.stroke(&line,stroke);
+                        let line = canvas::Path::line(
+                            Point::new(firstX as f32,cy as f32),
+                            Point::new(newTimeX as f32,cy as f32));
+                        frame.stroke(&line,stroke);
+                    }
+                }
+                let storage = station.FindTrackTrainIsStoredOn(train.Number(),arrival,depart);
+                if storage.is_some() {
+                    let stationName = station.Name();
+                    let trackName   = storage.unwrap().Name();
+                    let sy = *self.storagearray.get(&StorageArrayIndex::Y(stationName,trackName)).unwrap();
+                    let occupiedA = storage.unwrap().IncludesTime(arrival);
+                    let occupiedD = storage.unwrap().IncludesTime(depart);
+                    if occupiedA.is_some() &&
+                       occupiedA.unwrap().TrainNum() == train.Number() {
+                        let from = occupiedA.unwrap().From();
+                        let to   = occupiedA.unwrap().Until();
+                        let fromX = self.labelsize as f64 +
+                                        ((from / self.timeinterval as f64) * 20.0) + 4.0;
+                        let toX   = self.labelsize as f64 +
+                                        ((to / self.timeinterval as f64) * 20.0) + 4.0;
+                        let stroke = Stroke::default()
+                            .with_color(LookupColorByName(color.as_str()))
+                            .with_width(8.0);
+                        
+                        if toX > fromX {
+                            let line = canvas::Path::line(
+                                Point::new(fromX as f32,sy as f32),
+                                Point::new(toX as f32,sy as f32));
+                            frame.stroke(&line,stroke);
+                        } else {
+                            let line = canvas::Path::line(
+                                Point::new(fromX as f32,sy as f32),
+                                Point::new(lastX as f32,sy as f32));
+                            frame.stroke(&line,stroke);
+                            let line = canvas::Path::line(
+                                Point::new(firstX as f32,sy as f32),
+                                Point::new(toX as f32,sy as f32));
+                            frame.stroke(&line,stroke);
+                        }
+                    }
+                    if occupiedD.is_some() &&
+                       occupiedA != occupiedD &&
+                       occupiedD.unwrap().TrainNum() == train.Number() {
+                        let from = occupiedD.unwrap().From();
+                        let to   = occupiedD.unwrap().Until();
+                        let fromX = self.labelsize as f64 +
+                                        ((from / self.timeinterval as f64) * 20.0) + 4.0;
+                        let toX   = self.labelsize as f64 +
+                                        ((to / self.timeinterval as f64) * 20.0) + 4.0;
+                        let stroke = Stroke::default()
+                            .with_color(LookupColorByName(color.as_str()))
+                            .with_width(8.0);
+                        if toX > fromX {
+                            let line = canvas::Path::line(
+                                Point::new(fromX as f32,sy as f32),
+                                Point::new(toX as f32,sy as f32));
+                            frame.stroke(&line,stroke);
+                        } else {
+                            let line = canvas::Path::line(
+                                Point::new(fromX as f32,sy as f32),
+                                Point::new(lastX as f32,sy as f32));
+                            frame.stroke(&line,stroke);
+                            let line = canvas::Path::line(
+                                Point::new(firstX as f32,sy as f32),
+                                Point::new(toX as f32,sy as f32));
+                            frame.stroke(&line,stroke);
+                        }
+                    }
+                        
+                }
+                if rStation.is_some() {
+                    let storage = rStation
+                                    .unwrap()
+                                    .FindTrackTrainIsStoredOn(train.Number(),
+                                                              arrival,
+                                                              depart);
+                    if storage.is_some() {
+                        let stationName = rStation.unwrap().Name();
+                        let trackName   = storage.unwrap().Name();
+                        let sy = *self.storagearray.get(&StorageArrayIndex::Y(stationName,trackName)).unwrap();
+                        let occupiedA = storage.unwrap().IncludesTime(arrival);
+                        let occupiedD = storage.unwrap().IncludesTime(depart);
+                        if occupiedA.is_some() &&
+                           occupiedA.unwrap().TrainNum() == train.Number() {
+                            let from = occupiedA.unwrap().From();
+                            let to   = occupiedA.unwrap().Until();
+                            let fromX = self.labelsize as f64 +
+                                            ((from / self.timeinterval as f64) * 20.0) + 4.0;
+                            let toX   = self.labelsize as f64 +
+                                            ((to / self.timeinterval as f64) * 20.0) + 4.0;
+                            let stroke = Stroke::default()
+                                .with_color(LookupColorByName(color.as_str()))
+                                .with_width(8.0);
+                            if toX > fromX {
+                                let line = canvas::Path::line(
+                                    Point::new(fromX as f32,sy as f32),
+                                    Point::new(toX as f32,sy as f32));
+                                frame.stroke(&line,stroke);
+                            } else {
+                                let line = canvas::Path::line(
+                                    Point::new(fromX as f32,sy as f32),
+                                    Point::new(lastX as f32,sy as f32));
+                                frame.stroke(&line,stroke);
+                                let line = canvas::Path::line(
+                                    Point::new(firstX as f32,sy as f32),
+                                    Point::new(toX as f32,sy as f32));
+                                frame.stroke(&line,stroke);
+                            }
+                        }
+                        if occupiedD.is_some() &&
+                           occupiedA != occupiedD &&
+                           occupiedD.unwrap().TrainNum() == train.Number() {
+                            let from = occupiedD.unwrap().From();
+                            let to   = occupiedD.unwrap().Until();
+                            let fromX = self.labelsize as f64 +
+                                            ((from / self.timeinterval as f64) * 20.0) + 4.0;
+                            let toX   = self.labelsize as f64 +
+                                            ((to / self.timeinterval as f64) * 20.0) + 4.0;
+                            let stroke = Stroke::default()
+                                .with_color(LookupColorByName(color.as_str()))
+                                .with_width(8.0);
+                            if toX > fromX {
+                                let line = canvas::Path::line(
+                                    Point::new(fromX as f32,sy as f32),
+                                    Point::new(toX as f32,sy as f32));
+                                frame.stroke(&line,stroke);
+                            } else {
+                                let line = canvas::Path::line(
+                                    Point::new(fromX as f32,sy as f32),
+                                    Point::new(lastX as f32,sy as f32));
+                                frame.stroke(&line,stroke);
+                                let line = canvas::Path::line(
+                                    Point::new(firstX as f32,sy as f32),
+                                    Point::new(toX as f32,sy as f32));
+                                frame.stroke(&line,stroke);
+                            }
+                        }
+                    }
+                }
+                timeX = newTimeX;
+            }
+            oldDepart = depart;
+            oldSmile  = smile;
+        }
+            
     }
     fn _buildcabs(&mut self,frame: &mut canvas::Frame)
     {
@@ -296,13 +980,73 @@ impl ChartDisplay {
                                            self.bottomofcabs as f32));
         frame.stroke(&line,stroke);
     }
+    fn _buildchart(&mut self,frame: &mut canvas::Frame)
+    {
+        for m in (0..=self.timescale).step_by(self.timeinterval as usize) {
+            let mx = (self.labelsize as f64) + ( ( ((m as f64) / (self.timeinterval as f64)) * 20.0)) + 4.0;
+            let lw = if (m % 60) == 0 {2} else {1};
+            let line = canvas::Path::line(
+                               Point::new(mx as f32,self.topofchart as f32),
+                               Point::new(mx as f32,self.bottomofchart as f32));
+            let stroke = Stroke::default()
+                            .with_color(Color::BLACK)
+                            .with_width(lw as f32);
+            frame.stroke(&line,stroke);
+        }
+        let r = self.labelsize as f64 + (((self.timescale as f64 / 
+                                            self.timeinterval as f64) * 20.0));
+        let line = canvas::Path::line(
+                                Point::new(self.labelsize as f32,
+                                           self.topofchart as f32),
+                                Point::new(r as f32,
+                                           self.topofchart as f32));
+        let stroke = Stroke::default().with_color(Color::BLACK) 
+                                      .with_width(2.0);
+        frame.stroke(&line,stroke);
+        let line = canvas::Path::line(
+                                Point::new(self.labelsize as f32,
+                                           self.bottomofchart as f32),
+                                Point::new(r as f32,
+                                           self.bottomofchart as f32));
+        frame.stroke(&line,stroke);
+    }
+    fn _buildStorageTracks(&mut self,frame: &mut canvas::Frame)
+    {
+        for m in (0..=self.timescale).step_by(self.timeinterval as usize) {
+            let mx = (self.labelsize as f64) + ( ( ((m as f64) / (self.timeinterval as f64)) * 20.0)) + 4.0;
+            let lw = if (m % 60) == 0 {2} else {1};
+            let line = canvas::Path::line(
+                               Point::new(mx as f32,self.topofstorage as f32),
+                               Point::new(mx as f32,self.bottomofstorage as f32));
+            let stroke = Stroke::default()
+                            .with_color(Color::BLACK)
+                            .with_width(lw as f32);
+            frame.stroke(&line,stroke);
+        }
+        let r = self.labelsize as f64 + (((self.timescale as f64 / 
+                                            self.timeinterval as f64) * 20.0));
+        let line = canvas::Path::line(
+                                Point::new(self.labelsize as f32,
+                                           self.topofstorage as f32),
+                                Point::new(r as f32,
+                                           self.topofstorage as f32));
+        let stroke = Stroke::default().with_color(Color::BLACK) 
+                                      .with_width(2.0);
+        frame.stroke(&line,stroke);
+        let line = canvas::Path::line(
+                                Point::new(self.labelsize as f32,
+                                           self.bottomofstorage as f32),
+                                Point::new(r as f32,
+                                           self.bottomofstorage as f32));
+        frame.stroke(&line,stroke);
+    }
     fn buildWholeChart(&mut self, renderer: &Renderer, 
                         timetable: &TimeTableSystem) -> Vec<canvas::Geometry> {
         self.deleteWholeChart();
         self.timescale = timetable.TimeScale();
         self.timeinterval = timetable.TimeInterval();
         self.totallength = timetable.TotalLength();
-        self.chartheight = (self.totallength * 20.0) + 20.0;
+        self.chartheight = (self.totallength * 20.0) + 40.0;
         let numIncrs =  (((self.timescale as f64) + (self.timeinterval as f64)) / 
                             (self.timeinterval as f64)) as i32;
         let cwidth = (numIncrs * 20) + self.labelsize as i32 + 20;
@@ -313,7 +1057,7 @@ impl ChartDisplay {
         self.bottomofcabs = self.topofcabs + self.cabheight;        
         self.topofchart = self.bottomofcabs + 10.0;
         self.bottomofchart = self.topofchart + self.chartheight;
-        let topOff = self.topofchart + self.cabheight;
+        let topOff = self.topofchart + self.chartheight;
         self.topofstorage = topOff as f64 + 10.0;
         self.storageoffset = self.topofstorage;
         let topOff = self.topofstorage;
@@ -323,10 +1067,10 @@ impl ChartDisplay {
                 numstorage += 1;
             }
         }
-        self.storagetrackheight = (self.lheight + 20.0) + 
+        self.storagetrackheight = (self.lheight) + 
                                     (numstorage as f64 * self.lheight);
         self.bottomofstorage = self.topofstorage + self.storagetrackheight;
-        let cheight = self.bottomofstorage;
+        let cheight = self.bottomofstorage + self.lheight;
         let frameheight = cheight as f32;
 
         //eprintln!("*** ChartDisplay::buildWholeChart frame size is ({},{})",framewidth,frameheight);
@@ -339,16 +1083,16 @@ impl ChartDisplay {
             self.addACab(&mut frame,cab,cabindex);
             cabindex += 1;
         }
-        //self._buildChart(&mut frame);
-        //self._buildStorageTracks(&mut frame);
+        self._buildchart(&mut frame);
+        self._buildStorageTracks(&mut frame);
 
         let mut sindex = 0;
         for station in timetable.StationsIter() {
-            //self.addAStation(&mut frame,station,sindex);
+            self.addAStation(&mut frame,station,sindex);
             sindex += 1;
         }
         for (number,train) in timetable.TrainsIter() {
-            //self.addATrain(&mut frame,timetable,train);
+            self.addATrain(&mut frame,timetable,train);
         }
         vec![frame.into_geometry()]
     }
