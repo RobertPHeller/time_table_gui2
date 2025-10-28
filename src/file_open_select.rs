@@ -8,7 +8,7 @@
 //  Author        : $Author$
 //  Created By    : Robert Heller
 //  Created       : 2025-10-27 13:53:29
-//  Last Modified : <251027.2107>
+//  Last Modified : <251028.1359>
 //
 //  Description	
 //
@@ -40,11 +40,14 @@
 
 use std::io;
 use std::fs::{canonicalize,self, DirEntry,read_dir};
-use std::path::PathBuf;
+use std::path::{Path,PathBuf};
+use std::fmt;
 
+use fast_glob::glob_match;
 use iced::widget::{button, column, row, text, Column, container, scrollable, 
                     pick_list, text_input};
 use iced::{window,Background,Theme,Center, Color, Element};
+use iced::widget::button::Style;
 
 #[derive(Debug, Clone)] 
 pub enum Message {
@@ -52,7 +55,9 @@ pub enum Message {
     OpenFile,
     Cancel,
     SelectDir(String),
-    SelectFileType,
+    ContentChanged(String),
+    TypeSelected(FileType),
+    SelectFile(String),
 }
 
 #[derive(Debug, Clone)]
@@ -61,13 +66,33 @@ pub enum Action {
     Open(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct FileType {
     name: String,
     extension: String, 
-    mactype: Option<String>,
 }
-    
+
+impl fmt::Display for FileType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.name, self.extension)
+    }
+}    
+
+impl FileType {
+    pub fn new(name: String, ext: String) -> Self {
+        Self {name: name, extension: ext}
+    }
+    pub fn GlobMatch(&self,filename: String) -> bool {
+        glob_match(self.extension.clone(),filename)            
+            
+    }
+}
+
+impl Default for FileType {
+    fn default() -> Self {
+        Self::new("All Files".to_string(),"*".to_string())
+    }
+}
 
 #[derive(Debug, Clone)] 
 pub struct FileOpenSelect {
@@ -78,6 +103,7 @@ pub struct FileOpenSelect {
     title: String,
     dirs: Vec<String>,
     currentfile: String,
+    files: Vec<String>,    
 }
 
 
@@ -87,35 +113,93 @@ impl FileOpenSelect {
     pub fn new(defaultextension: String,
                 filetypes: &[FileType], initialdir: PathBuf,
                 initialfile: PathBuf, title: String) -> Self {
-        
+        let currentfile_path = initialfile.as_path();
+        let currentfile_lossy = currentfile_path.to_string_lossy();
+        let currentfile = currentfile_lossy.to_string();
         let mut this = Self {defaultextension: defaultextension,
                              filetypes: Vec::new(),
                              initialdir: match canonicalize(initialdir) {
                                 Err(p) => canonicalize(".").ok().unwrap(),
                                 Ok(f) => f,
                               },
-                              initialfile: initialfile,
+                              initialfile: initialfile.clone(),
                               title: title, dirs: Vec::new(),
-                              currentfile: String::new() };
+                              currentfile: currentfile,
+                              files: Vec::new() };
         for i in 0..filetypes.len() {
             this.filetypes.push(filetypes[i].clone());
         }
-        let mut current = this.initialdir.clone();
-        this.dirs = vec![current.to_string_lossy().to_string()];
+        if this.filetypes.len() == 0 {
+            this.filetypes.push(FileType::default());
+        }
+        let temp1 = this.initialdir.clone();
+        this.buildDirs(&temp1);
+        let temp2 = this.filetypes[0].clone();
+        this.populateFiles(&temp2);
+        this
+    }
+    fn buildDirs(&mut self,cur: &PathBuf) {
+        let mut current = PathBuf::from(cur);
+        self.dirs = vec![current.to_string_lossy().to_string()];
         loop {
             match current.parent() {
                 None => {break;},
                 Some(parent) => {
-                    this.dirs.insert(0,parent.to_string_lossy().to_string());
+                    self.dirs.insert(0,parent.to_string_lossy().to_string());
                     current = PathBuf::from(parent);
                 },
             }
         }
-        this
+        
     }
     pub fn update(&mut self, message: Message) -> Option<Action> {
+        eprintln!("*** FileOpenSelect::update() message is {:?}",message);
         match message {
-            _ => None,
+            Message::ContentChanged(content) => {
+                self.currentfile = content;
+                None
+            },
+            Message::TypeSelected(filetype) => {
+                self.populateFiles(&filetype);
+                None
+            }
+            Message::UpDir => {
+                let path = PathBuf::from(self.dirs.last().unwrap());
+                let parent = path.parent();
+                if parent.is_some() {
+                    self.buildDirs(&PathBuf::from(parent.unwrap()));
+                    let temp = self.filetypes[0].clone();
+                    self.populateFiles(&temp);
+                }
+                None
+            },
+            Message::SelectDir(dir) => {
+                self.buildDirs(&PathBuf::from(dir));
+                let temp = self.filetypes[0].clone();
+                self.populateFiles(&temp);
+                None
+            },
+            Message::OpenFile => {
+                let path = match canonicalize(self.currentfile.clone()) {
+                    Ok(p) => p,
+                    Err(e) => {eprintln!("{}",e); return None;}
+                };
+                if path.is_dir() {
+                    self.buildDirs(&path);
+                    let temp = self.filetypes[0].clone();
+                    self.populateFiles(&temp);
+                    None
+                } else {
+                    Some(Action::Open(path.to_string_lossy().to_string()))
+                }
+            },
+            Message::Cancel => {
+                Some(Action::Cancel)
+            },
+            Message::SelectFile(name) => {
+                self.currentfile = name;
+                None
+            },
         }
     }
     pub fn view(&self) -> Element<'_, Message> {
@@ -124,7 +208,7 @@ impl FileOpenSelect {
                  self.DirTree(), 
                  button("^").on_press(Message::UpDir)
             ],
-            scrollable(self.DirList()),
+            scrollable(self.DirList()).height(160.0).width(450.0),
             row!["File name:",
                  self.CurrentFile(),
                  button("Open").on_press(Message::OpenFile)
@@ -138,19 +222,43 @@ impl FileOpenSelect {
     fn DirTree(&self) -> Element<'_, Message> {
         pick_list(self.dirs.clone(),self.dirs.last(),Message::SelectDir).into()
     }
-    fn DirList(&self) -> Element<'_, Message> {
-        let mut files: Vec<String> = Vec::new();
+    fn populateFiles(&mut self,filetype: &FileType)
+    {
+        self.files = Vec::new();
         for entry in fs::read_dir(self.dirs.last().unwrap()).ok().unwrap() {
-            let ent = entry.ok().unwrap().path().to_string_lossy().to_string();
-            files.push(ent);
+            let entryPath = entry.ok().unwrap().path();
+            if entryPath.is_dir() {
+                let ent = entryPath.to_string_lossy().to_string() + "/";
+                self.files.push(ent);
+            } else {
+                let fname = entryPath.file_name().unwrap().to_string_lossy();
+                if filetype.GlobMatch(fname.to_string()) {
+                    self.files.push(entryPath.to_string_lossy().to_string());
+                }
+            }
         }
-        column(files.iter().map(|name| text!("{name}").into())).into()
+        self.files.sort_unstable();
+    }
+    fn white(_:&Theme, _:button::Status) -> Style {
+        Style {background:Some(Background::Color(Color::from_rgb8(255,255,255))),
+                                     ..Style::default()}
+    } 
+    fn DirList(&self) -> Element<'_, Message> {
+        column(self.files.iter()
+                    .map(|name| button(name.as_str())
+                                .style(Self::white)
+                                .on_press(Message::SelectFile(name.to_string()))
+                                .into())).into()
     }
     fn CurrentFile(&self) -> Element<'_, Message> {
-        text_input("",&self.currentfile).into()
+        text_input("",&self.currentfile)
+            .on_input(Message::ContentChanged)
+            .into()
     }
     fn TypeList(&self) -> Element<'_, Message> {
-        text!("not implemented").into()
+        pick_list(self.filetypes.clone(),
+                    Some(self.filetypes[0].clone()),
+                    Message::TypeSelected).into()
     }
     pub fn Settings() -> window::Settings {
         window::Settings {

@@ -8,7 +8,7 @@
 //  Author        : $Author$
 //  Created By    : Robert Heller
 //  Created       : 2025-10-27 11:36:17
-//  Last Modified : <251027.2112>
+//  Last Modified : <251028.1409>
 //
 //  Description	
 //
@@ -53,10 +53,10 @@ struct Application {
     grab: Option<window::Id>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum WindowType {
     MainWindow,
-    FileSelectDialog(String,String,String,String),
+    FileSelectDialog(String,String,String,String,main_window::Message,window::Id),
 }
 
 
@@ -66,7 +66,7 @@ impl WindowType {
     pub fn window_settings(&self) -> window::Settings {
         match self {
             WindowType::MainWindow => window::Settings::default(),
-            WindowType::FileSelectDialog(defext,initdir,initfile,title) => file_open_select::Manager::Settings(),
+            WindowType::FileSelectDialog(defext,initdir,initfile,title,_,_) => file_open_select::Manager::Settings(),
         }
     }
 
@@ -74,7 +74,7 @@ impl WindowType {
     fn create(&self) -> Window {
         match self {
             WindowType::MainWindow => Window::MainWindow(main_window::Manager::default()),
-            WindowType::FileSelectDialog(defext,initdir,initfile,title) => Window::FileOpenDialog(file_open_select::Manager::Setup(defext,initdir,initfile,title))
+            WindowType::FileSelectDialog(defext,initdir,initfile,title,return_message,return_id) => Window::FileOpenDialog(file_open_select::Manager::Setup(defext,initdir,initfile,title),return_message,return_id)
         }
     }
 }
@@ -82,7 +82,7 @@ impl WindowType {
 #[derive(Clone)] 
 pub enum Window {
     MainWindow(main_window::Manager),
-    FileOpenDialog(file_open_select::Manager),
+    FileOpenDialog(file_open_select::Manager,impl Fn(String) -> main_window::Message,window::Id),
 }
 
 #[derive(Debug, Clone)] 
@@ -121,22 +121,32 @@ impl Application {
         match message {
             Message::WindowOpened(id, window_type) => {
                 let window = window_type.create();
+                match window_type {
+                    WindowType::FileSelectDialog(..) => {
+                        self.grab = Some(id);
+                    },
+                    _ => (),
+                }
                 self.windows.insert(id, window);
             }
             Message::WindowClosed(id) => {
+                if self.grab == Some(id) {
+                    self.grab = None;
+                }
                 self.windows.remove(&id);
 
                 if self.windows.is_empty() {
                     return iced::exit();
                 }
             }
-            Message::MainWindow(id, message) => {
+            Message::MainWindow(id, message) if self.grab.is_none() || 
+                                                self.grab == Some(id) => {
                 if let Some(Window::MainWindow(manager)) = self.windows.get_mut(&id) {
                     if let Some(action) = manager.update(message) {
                         match action {
-                            main_window::Action::OpenFileSelect(defext,initdir,initfile,title)
+                            main_window::Action::OpenFileSelect(defext,initdir,initfile,title,return_message)
                                     => {
-                                let window_type = WindowType::FileSelectDialog(defext,initdir,initfile,title);
+                                let window_type = WindowType::FileSelectDialog(defext,initdir,initfile,title,return_message,id);
                                 let (_, open) = window::open(window_type.window_settings());
                                 return open
                                     .map(move |id| Message::WindowOpened(id, window_type.clone()));
@@ -145,11 +155,21 @@ impl Application {
                     }
                 }
             }
-            Message::FileOpenDialog(id, message) => {
-                if let Some(Window::FileOpenDialog(manager)) = self.windows.get_mut(&id) {
+            Message::FileOpenDialog(id, message) if self.grab.is_none() || 
+                                                self.grab == Some(id) => {
+                if let Some(Window::FileOpenDialog(manager,retmes,retid)) = self.windows.get_mut(&id) {
                     if let Some(action) = manager.update(message) {
+                        self.grab = None;
                         match action {
-                            _ => (),
+                            file_open_select::Action::Cancel => {
+                                let _ = window::close(id);
+                            },
+                            file_open_select::Action::Open(filename) => {
+                                if let Some(Window::MainWindow(mmanager)) = self.windows.get_mut(&retid) {
+                                    let _ = mmanager.update(retmes(filename));
+                                }
+                                let _ = window::close(id);
+                            },
                         }
                     }
                 }
@@ -165,7 +185,7 @@ impl Application {
                 Window::MainWindow(manager) => manager
                     .view()
                     .map(move |message| Message::MainWindow(id, message)),
-                Window::FileOpenDialog(manager) => manager
+                Window::FileOpenDialog(manager, ..) => manager
                     .view() 
                     .map(move |message| Message::FileOpenDialog(id, message)),
             }

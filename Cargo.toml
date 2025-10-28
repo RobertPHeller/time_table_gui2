@@ -14,5 +14,6 @@ description = "Model Railroad Time Table generating program"
 [dependencies]
 time_table = "0.1.4"
 iced = { version = "0.13.1", features = ["lazy", "image", "canvas"] }
+fast-glob = "1.0.0"
 
 

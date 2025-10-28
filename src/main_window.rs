@@ -8,7 +8,7 @@
 //  Author        : $Author$
 //  Created By    : Robert Heller
 //  Created       : 2025-10-24 10:24:21
-//  Last Modified : <251027.1748>
+//  Last Modified : <251028.1407>
 //
 //  Description	
 //
@@ -61,7 +61,7 @@ use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::sync::{LazyLock, Mutex};
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Message {
     Split(pane_grid::Axis, pane_grid::Pane),
     SplitFocused(pane_grid::Axis),
@@ -83,12 +83,13 @@ pub enum Message {
     CabsSelected(Cabs),
     NotesSelected(Notes),
     HelpSelected(Help),
+    FileOpen(String),
 }
 
 #[derive(Debug, Clone)]
 pub enum Action {
     //            defext initdir initfile title
-    OpenFileSelect(String,String,String,String)
+    OpenFileSelect(String,String,String,String,impl Fn(String) -> Message)
 }
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
@@ -1147,7 +1148,8 @@ impl TimeTableGUI {
             Message::FileSelected(File::Open) => {
                 Some(Action::OpenFileSelect(".tt".to_string(),".".to_string(),
                                   "timetable.tt".to_string(),
-                                  "Name of time table file to load".to_string()))
+                                  "Name of time table file to load".to_string(),
+                                    Message::FileOpen))
 //                match TimeTableSystem::old("LJandBS.tt") {
 //                    Ok(tt) => {self.timetable = tt;
 //                                eprintln!("{} loaded: {}","LJandBS.tt",
@@ -1332,43 +1334,30 @@ impl TimeTableGUI {
     fn buttonbox() -> Element<'static, Message> {
         column![
             button("Add a new train")
-                .style(Self::white)
                 .on_press(Message::TrainsSelected(Trains::AddTrain)),
             button("Delete an existing train")
-                .style(Self::white)
                 .on_press(Message::TrainsSelected(Trains::DeleteTrain)),
             button("Set Duplicate Station")
-                .style(Self::white)
                 .on_press(Message::StationsSelected(Stations::SetDuplicateStation)),
             button("Clear Duplicate Station")
-                .style(Self::white)
                 .on_press(Message::StationsSelected(Stations::ClearDuplicateStation)),
             button("Add Storage Track")
-                .style(Self::white)
                 .on_press(Message::StationsSelected(Stations::AddStorageTrack)),
             button("Add A Cab")
-                .style(Self::white)
                 .on_press(Message::CabsSelected(Cabs::AddACab)),
             button("Create New Note")
-                .style(Self::white)
                 .on_press(Message::NotesSelected(Notes::CreateNewNote)),
             button("Edit Existing Note")
-                .style(Self::white)
                 .on_press(Message::NotesSelected(Notes::EditExistingNote)),
             button("Add note to train")
-                .style(Self::white)
                 .on_press(Message::NotesSelected(Notes::AddNoteToTrain)),
             button("Add note to train at station stop")
-                .style(Self::white)
                 .on_press(Message::NotesSelected(Notes::AddNoteToTrainAtStation)),
             button("Remove note from train")
-                .style(Self::white)
                 .on_press(Message::NotesSelected(Notes::RemoveNoteFromTrain)),
             button("Remove note from train at station stop")
-                .style(Self::white)
                 .on_press(Message::NotesSelected(Notes::RemoveNoteFromTrainAtStation)),
             button("Quit -- Exit NOW")
-                .style(Self::white)
                 .on_press(Message::FileSelected(File::Exit)),
         ].into()
     }
