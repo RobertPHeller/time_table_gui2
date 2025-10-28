@@ -8,7 +8,7 @@
 //  Author        : $Author$
 //  Created By    : Robert Heller
 //  Created       : 2025-10-27 13:53:29
-//  Last Modified : <251027.1656>
+//  Last Modified : <251027.2107>
 //
 //  Description	
 //
@@ -44,7 +44,7 @@ use std::path::PathBuf;
 
 use iced::widget::{button, column, row, text, Column, container, scrollable, 
                     pick_list, text_input};
-use iced::{Background,Theme,Center, Color, Element};
+use iced::{window,Background,Theme,Center, Color, Element};
 
 #[derive(Debug, Clone)] 
 pub enum Message {
@@ -83,6 +83,7 @@ pub struct FileOpenSelect {
 
 
 impl FileOpenSelect {
+    pub fn Title(&self) -> String {self.title.clone()}
     pub fn new(defaultextension: String,
                 filetypes: &[FileType], initialdir: PathBuf,
                 initialfile: PathBuf, title: String) -> Self {
@@ -99,6 +100,17 @@ impl FileOpenSelect {
         for i in 0..filetypes.len() {
             this.filetypes.push(filetypes[i].clone());
         }
+        let mut current = this.initialdir.clone();
+        this.dirs = vec![current.to_string_lossy().to_string()];
+        loop {
+            match current.parent() {
+                None => {break;},
+                Some(parent) => {
+                    this.dirs.insert(0,parent.to_string_lossy().to_string());
+                    current = PathBuf::from(parent);
+                },
+            }
+        }
         this
     }
     pub fn update(&mut self, message: Message) -> Option<Action> {
@@ -106,7 +118,7 @@ impl FileOpenSelect {
             _ => None,
         }
     }
-    pub fn view(&mut self) -> Element<'_, Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         column![
             row!["Directory:", 
                  self.DirTree(), 
@@ -123,21 +135,10 @@ impl FileOpenSelect {
             ]
         ].into()
     }
-    fn DirTree(&mut self) -> Element< Message> {
-        let mut current = self.initialdir.clone();
-        self.dirs = vec![current.to_string_lossy().to_string()];
-        loop {
-            match current.parent() {
-                None => {break;},
-                Some(parent) => {
-                    self.dirs.insert(0,parent.to_string_lossy().to_string());
-                    current = PathBuf::from(parent);
-                },
-            }
-        }
+    fn DirTree(&self) -> Element<'_, Message> {
         pick_list(self.dirs.clone(),self.dirs.last(),Message::SelectDir).into()
     }
-    fn DirList(&self) -> Element< Message> {
+    fn DirList(&self) -> Element<'_, Message> {
         let mut files: Vec<String> = Vec::new();
         for entry in fs::read_dir(self.dirs.last().unwrap()).ok().unwrap() {
             let ent = entry.ok().unwrap().path().to_string_lossy().to_string();
@@ -145,14 +146,20 @@ impl FileOpenSelect {
         }
         column(files.iter().map(|name| text!("{name}").into())).into()
     }
-    fn CurrentFile(&mut self) -> Element< Message> {
-        if self.currentfile.len() == 0 {
-            self.currentfile = self.initialfile.to_string_lossy().to_string();
-        }
+    fn CurrentFile(&self) -> Element<'_, Message> {
         text_input("",&self.currentfile).into()
     }
-    fn TypeList(&self) -> Element< Message> {
+    fn TypeList(&self) -> Element<'_, Message> {
         text!("not implemented").into()
+    }
+    pub fn Settings() -> window::Settings {
+        window::Settings {
+            size: (450.0, 250.0).into(),
+            ..window::Settings::default()
+        }
+    }
+    pub fn Setup(defext: &String,initdir: &String,initfile: &String,title: &String) -> Self {
+        Self::new(defext.to_string(),&[],initdir.into(),initfile.into(),title.to_string() )
     }
 }
 
@@ -162,3 +169,5 @@ impl Default for FileOpenSelect {
                             PathBuf::from(""),"".to_string())
     }
 }
+
+pub type Manager = FileOpenSelect;

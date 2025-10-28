@@ -8,7 +8,7 @@
 //  Author        : $Author$
 //  Created By    : Robert Heller
 //  Created       : 2025-10-27 11:36:17
-//  Last Modified : <251027.1504>
+//  Last Modified : <251027.2112>
 //
 //  Description	
 //
@@ -50,18 +50,23 @@ mod file_open_select;
 
 struct Application {
     windows: BTreeMap<window::Id, Window>,
+    grab: Option<window::Id>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum WindowType {
     MainWindow,
+    FileSelectDialog(String,String,String,String),
 }
+
+
 
 impl WindowType {
     /// The [`window::Settings`] for each type of window.
     pub fn window_settings(&self) -> window::Settings {
         match self {
             WindowType::MainWindow => window::Settings::default(),
+            WindowType::FileSelectDialog(defext,initdir,initfile,title) => file_open_select::Manager::Settings(),
         }
     }
 
@@ -69,6 +74,7 @@ impl WindowType {
     fn create(&self) -> Window {
         match self {
             WindowType::MainWindow => Window::MainWindow(main_window::Manager::default()),
+            WindowType::FileSelectDialog(defext,initdir,initfile,title) => Window::FileOpenDialog(file_open_select::Manager::Setup(defext,initdir,initfile,title))
         }
     }
 }
@@ -76,6 +82,7 @@ impl WindowType {
 #[derive(Clone)] 
 pub enum Window {
     MainWindow(main_window::Manager),
+    FileOpenDialog(file_open_select::Manager),
 }
 
 #[derive(Debug, Clone)] 
@@ -86,6 +93,7 @@ pub enum Message {
 
     // Messages for the different types of windows
     MainWindow(window::Id, main_window::Message),
+    FileOpenDialog(window::Id, file_open_select::Message),
 }
 
 impl Application {
@@ -95,14 +103,16 @@ impl Application {
         (
             Self {
                 windows: BTreeMap::new(),
+                grab: None,
             },
-            open.map(move |id| Message::WindowOpened(id, window_type)),
+            open.map(move |id| Message::WindowOpened(id, window_type.clone())),
         )
     }
 
     fn title(&self, id: window::Id) -> String {
         match self.windows.get(&id) {
             Some(Window::MainWindow(_)) => "Time Table V2".to_string(),
+            Some(Window::FileOpenDialog(_)) => "File Select".to_string(),
             None => "Unknown Window".to_string(),
         }
     }
@@ -123,6 +133,24 @@ impl Application {
             Message::MainWindow(id, message) => {
                 if let Some(Window::MainWindow(manager)) = self.windows.get_mut(&id) {
                     if let Some(action) = manager.update(message) {
+                        match action {
+                            main_window::Action::OpenFileSelect(defext,initdir,initfile,title)
+                                    => {
+                                let window_type = WindowType::FileSelectDialog(defext,initdir,initfile,title);
+                                let (_, open) = window::open(window_type.window_settings());
+                                return open
+                                    .map(move |id| Message::WindowOpened(id, window_type.clone()));
+                            },
+                        }
+                    }
+                }
+            }
+            Message::FileOpenDialog(id, message) => {
+                if let Some(Window::FileOpenDialog(manager)) = self.windows.get_mut(&id) {
+                    if let Some(action) = manager.update(message) {
+                        match action {
+                            _ => (),
+                        }
                     }
                 }
             }
@@ -137,6 +165,9 @@ impl Application {
                 Window::MainWindow(manager) => manager
                     .view()
                     .map(move |message| Message::MainWindow(id, message)),
+                Window::FileOpenDialog(manager) => manager
+                    .view() 
+                    .map(move |message| Message::FileOpenDialog(id, message)),
             }
         } else {
             horizontal_space().into()

@@ -8,7 +8,7 @@
 //  Author        : $Author$
 //  Created By    : Robert Heller
 //  Created       : 2025-10-24 10:24:21
-//  Last Modified : <251027.1237>
+//  Last Modified : <251027.1748>
 //
 //  Description	
 //
@@ -87,6 +87,8 @@ pub enum Message {
 
 #[derive(Debug, Clone)]
 pub enum Action {
+    //            defext initdir initfile title
+    OpenFileSelect(String,String,String,String)
 }
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
@@ -1143,16 +1145,19 @@ impl TimeTableGUI {
         eprintln!("*** TimeTableGUI::update(): message is {:?}",message);
         match message {
             Message::FileSelected(File::Open) => {
-                match TimeTableSystem::old("LJandBS.tt") {
-                    Ok(tt) => {self.timetable = tt;
-                                eprintln!("{} loaded: {}","LJandBS.tt",
-                                            self.timetable.Name());
-                    },
-                    Err(err) => {eprintln!("Count not open LJandBS.tt: {}",
-                                                err.to_string());
-                    },
-                }
-                None
+                Some(Action::OpenFileSelect(".tt".to_string(),".".to_string(),
+                                  "timetable.tt".to_string(),
+                                  "Name of time table file to load".to_string()))
+//                match TimeTableSystem::old("LJandBS.tt") {
+//                    Ok(tt) => {self.timetable = tt;
+//                                eprintln!("{} loaded: {}","LJandBS.tt",
+//                                            self.timetable.Name());
+//                    },
+//                    Err(err) => {eprintln!("Count not open LJandBS.tt: {}",
+//                                                err.to_string());
+//                    },
+//                }
+//                None
             },
             Message::FileSelected(File::Exit) => exit(0),
             Message::Resized(pane_grid::ResizeEvent { split, ratio }) => {
@@ -1161,6 +1166,7 @@ impl TimeTableGUI {
                 None
             }
             _ => None,
+
         }
     }
 
@@ -1428,3 +1434,4 @@ enum Pane {
 //}
 
 pub type Manager = TimeTableGUI;
+
